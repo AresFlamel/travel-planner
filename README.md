@@ -66,11 +66,12 @@ graph TD
 - `uv` package manager (`pip install uv` or `uv tool install google-agents-cli`)
 - Google Cloud project with Vertex AI, Firestore, and Cloud Storage APIs enabled.
 
-### 1. Installation
-Clone the repository and install dependencies using `uv`:
+### 1. Installation & Dependencies
+Clone the repository and install project dependencies using `uv`:
 
 ```bash
 uv sync
+cd frontend && uv pip install -r requirements.txt && cd ..
 ```
 
 ### 2. Environment Configuration
@@ -83,28 +84,69 @@ GOOGLE_MAPS_API_KEY=your-google-maps-api-key
 ```
 
 ### 3. Seed Firestore Database (Optional)
-To populate your Firestore database with initial destination data:
+Populate your Firestore database with initial destination records:
 
 ```bash
 uv run python seed_firestore.py
 ```
 
-### 4. Run Interactive Agent Playground
-Test the agent logic and tools interactively using the CLI playground:
+### 4. Option A: Run Interactive Agent Playground (CLI)
+Test the agent logic, tools, and artifacts interactively in your terminal:
 
 ```bash
 agents-cli playground
 ```
 
-### 5. Run Web Application Locally
-To start the plain chat UI web server locally:
+### 5. Option B: Run Agent & Web Chat UI Locally
+To run the full agent with the custom web chat interface locally:
 
 ```bash
+# 1. Set environment variables to route to your agent directory
+export AGENT_DIRECTORY=app
+export AGENT_ENGINE_RESOURCE_NAME=$(jq -r .reasoning_engine_id deployment_metadata.json 2>/dev/null || echo "")
+
+# 2. Start the FastAPI server locally from the frontend folder
 cd frontend
 uv run uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
-Open a web browser and navigate to port `8080` on your machine to interact with the Travel Planner AI chat interface.
+Open your browser to `http://localhost:8080` to interact with the Travel Planner AI chat interface.
+
+---
+
+## ☁️ Deployment Instructions (Agent Engine & Cloud Run)
+
+If you need to deploy or re-deploy the backend agent and web frontend to Google Cloud:
+
+### Step 1: Deploy the Agent Engine Backend
+Deploy the updated agent code in `app/` to Vertex AI Reasoning Engine:
+
+```bash
+agents-cli deploy --no-confirm-project
+```
+*This updates `deployment_metadata.json` with the deployed Reasoning Engine resource ID.*
+
+### Step 2: Deploy the Frontend Chat UI to Cloud Run
+Deploy the FastAPI chat UI container to Cloud Run and configure its target agent parameters:
+
+```bash
+# 1. Extract deployed Reasoning Engine ID
+REASONING_ENGINE_ID=$(jq -r .reasoning_engine_id deployment_metadata.json)
+
+# 2. Deploy frontend service to Cloud Run
+gcloud run deploy travel-planner-frontend \
+  --source ./frontend \
+  --region us-east1 \
+  --allow-unauthenticated \
+  --set-env-vars AGENT_ENGINE_RESOURCE_NAME=${REASONING_ENGINE_ID},AGENT_DIRECTORY=app
+
+# 3. Grant Cloud Run service account access to Vertex AI Agent Engine
+PROJECT_NUMBER=$(gcloud projects describe $(gcloud config get-value project) --format="value(projectNumber)")
+
+gcloud projects add-iam-policy-binding $(gcloud config get-value project) \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/aiplatform.user"
+```
 
 ---
 
